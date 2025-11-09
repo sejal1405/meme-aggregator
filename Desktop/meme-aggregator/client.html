@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Meme coins — live</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Roboto, Arial; padding: 16px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #fafafa; position: sticky; top: 0; }
+    tr.highlight { background: #f0fff4; }
+    .small { font-size: 12px; color: #666; }
+    button { padding: 6px 10px; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Meme coins — Live</h1>
+  <div style="margin-bottom:12px;">
+    <button id="refresh">Refresh</button>
+    <label>Sort: 
+      <select id="sort"><option value="volume_usd">Volume</option><option value="price_usd">Price</option></select>
+    </label>
+    <label>Order:
+      <select id="order"><option value="desc">Desc</option><option value="asc">Asc</option></select>
+    </label>
+  </div>
+  <table id="tbl">
+    <thead><tr><th>Token</th><th>Ticker</th><th>Price (USD)</th><th>Volume (24h)</th><th class="small">Updated</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+  <script>
+    const socket = io(location.origin, { path: '/ws' });
+    const tbody = document.querySelector('#tbl tbody');
+    const tokenMap = new Map(); // token_address -> row data
+
+    // render helpers
+    function formatPrice(p){ return (typeof p === 'number') ? p.toFixed(6) : '-'; }
+    function formatVolume(v){ return v ? Math.round(v).toLocaleString() : '-' ; }
+    function timeAgo(ts){ return ts ? new Date(ts).toLocaleTimeString() : '-'; }
+
+    function renderRow(token) {
+      let tr = document.querySelector(`tr[data-id="${token.token_address}"]`);
+      if (!tr) {
+        tr = document.createElement('tr');
+        tr.setAttribute('data-id', token.token_address);
+        tr.innerHTML = `
+          <td class="name"></td>
+          <td class="ticker"></td>
+          <td class="price"></td>
+          <td class="volume"></td>
+          <td class="updated small"></td>
+        `;
+        tbody.appendChild(tr);
+      }
+      tr.querySelector('.name').textContent = token.token_name || token.token_address;
+      tr.querySelector('.ticker').textContent = token.token_ticker || '';
+      tr.querySelector('.price').textContent = formatPrice(token.price_usd);
+      tr.querySelector('.volume').textContent = formatVolume(token.volume_usd);
+      tr.querySelector('.updated').textContent = timeAgo(token.last_updated);
+      // highlight change briefly
+      tr.classList.add('highlight');
+      setTimeout(()=>tr.classList.remove('highlight'), 900);
+    }
+
+    // initial load
+    async function loadPage() {
+      const sort = document.getElementById('sort').value;
+      const order = document.getElementById('order').value;
+      const resp = await fetch(`/tokens?sort=${sort}&order=${order}&limit=30`);
+      const body = await resp.json();
+      tbody.innerHTML = '';
+      for (const t of body.data) {
+        tokenMap.set(t.token_address, t);
+        renderRow(t);
+      }
+    }
+
+    document.getElementById('refresh').addEventListener('click', loadPage);
+    document.getElementById('sort').addEventListener('change', loadPage);
+    document.getElementById('order').addEventListener('change', loadPage);
+
+    // socket updates
+    socket.on('connect', ()=> console.log('connected', socket.id));
+    socket.on('token:update', data => {
+      // small update payload: {token_address, price_usd, ...}
+      const t = tokenMap.get(data.token_address) || { token_address: data.token_address, token_name: data.token_name || data.token_address };
+      Object.assign(t, data);
+      tokenMap.set(t.token_address, t);
+      renderRow(t);
+    });
+    socket.on('token:new', data => {
+      tokenMap.set(data.token_address, data);
+      renderRow(data);
+    });
+
+    // initial load
+    loadPage().catch(e=>console.error(e));
+  </script>
+</body>
+</html>
+
+
+
+
+<!-- <!doctype html>
+<html>
+<head><meta charset="utf-8" /></head>
+<body>
+  <h2>Socket.io test client</h2>
+  <pre id="log"></pre>
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+  <script>
+    const log = (m) => { document.getElementById('log').textContent += m + '\n'; }
+    const socket = io('http://localhost:3000', { path: '/ws' });
+    socket.on('connect', () => log('connected: ' + socket.id));
+    socket.on('token:update', (d) => log('token:update ' + JSON.stringify(d)));
+    socket.on('disconnect', () => log('disconnected'));
+  </script>
+</body>
+</html> -->
